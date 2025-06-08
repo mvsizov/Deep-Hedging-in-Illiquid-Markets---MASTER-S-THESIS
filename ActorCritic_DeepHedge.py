@@ -134,6 +134,7 @@ class HedgeMLP(nn.Module):
             nn.Linear(256, 256),
             nn.Sigmoid(),
             nn.Linear(256, 1),
+            nn.Sigmoid()
         )
         # initializing weights
         self.net.apply(self._init_weights)
@@ -412,7 +413,7 @@ class HedgeAgent:
                         # the value of next state
                         value1 = -price_bs1 + residual_value1
     
-                    # --- 1) compute y for critic (detaching reward so no actor grads leak) ---
+                    # compute y for critic 
                     r_c      = reward.detach()             # cut the actor→reward graph
                     value1_c = value1.detach()             # already computed under no_grad(), but just to be explicit
                     y_c      = r_c + value1_c              # y for critic
@@ -426,12 +427,11 @@ class HedgeAgent:
                     self.critic_optimizer.zero_grad()
                     loss_c.backward() 
                     torch.nn.utils.clip_grad_norm_(
-                        self.actor.parameters(), max_norm=1.0 )
+                        self.critic.parameters(), max_norm=1.0 )
                     self.critic_optimizer.step()
                     
                     
-                    # --- 2) compute actor loss (we want actor to optimize the utility of next payoff) ---
-                    # actor sees the actual reward + value1 (value1 is detached, so no critic grads)
+                    #  compute actor loss 
                     exp_a  = torch.exp(-lambda_batch * (reward + value1.detach()))
                     loss_a = (exp_a / lambda_batch).mean() 
                     epoch_actor_losses.append(loss_a.item())
@@ -440,11 +440,10 @@ class HedgeAgent:
                     self.actor_optimizer.zero_grad()
                     loss_a.backward()
                     torch.nn.utils.clip_grad_norm_(
-                        self.critic.parameters(), max_norm=1.0)
+                        self.actor.parameters(), max_norm=1.0)
                     self.actor_optimizer.step()
                     
-                    
-                    # --- 3) soft‐update your target network as before ---
+                    # SOFT UPDATE
                     self._soft_update()
     
                     if done:
@@ -484,7 +483,7 @@ class HedgeAgent:
                     print(f"Saved checkpoint at epoch {epoch_i+1}")
                 
             except Exception as e:
-                # on crash, save what we have so far
+                # if crashed - save what I have now
                 print(f"Exception at epoch {epoch_i}, saving checkpoint…")
                 save_ckpt(epoch_i)
                 raise
@@ -497,7 +496,7 @@ class HedgeAgent:
         returns an array of hedge positions 
         """
         
-        # Load the Greek‐normalization params (adjust path as needed)
+        # Load the Greek‐normalization params 
         self.load_normalization_params(os.path.join(save_dir, "greek_norm.pkl"))
 
         # put both actor and critic networks into evaluation mode
